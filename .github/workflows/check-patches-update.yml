@@ -1,0 +1,86 @@
+name: Check for Morphe patches updates
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "7 */2 * * *"
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Fetch latest Morphe patches release tag
+        id: patches
+        run: |
+          TAG=$(gh api repos/MorpheApp/morphe-patches/releases --jq 'map(select(.draft | not)) | max_by(.published_at) | .tag_name')
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Latest patches release: $TAG"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Fetch latest Piko patches release tag
+        id: piko
+        run: |
+          TAG=$(gh api repos/crimera/piko/releases --jq 'map(select(.draft | not)) | max_by(.published_at) | .tag_name')
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Latest piko release: $TAG"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Check last release of this repo
+        id: last
+        run: |
+          BODY=$(gh release view --json body -q '.body' 2>/dev/null || echo "none")
+          echo "body<<DELIM" >> "$GITHUB_OUTPUT"
+          echo "$BODY" >> "$GITHUB_OUTPUT"
+          echo "DELIM" >> "$GITHUB_OUTPUT"
+
+          HAS_RELEASE=$(gh release list --limit 1 --json tagName -q '.[0].tagName' 2>/dev/null || echo "none")
+          echo "has_release=$([[ "$HAS_RELEASE" != "none" ]] && echo "true" || echo "false")" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        continue-on-error: true
+
+      - name: Trigger build if patches updated
+        env:
+          HAS_RELEASE: ${{ steps.last.outputs.has_release }}
+          BODY: ${{ steps.last.outputs.body }}
+          PATCHES_TAG: ${{ steps.patches.outputs.tag }}
+          PIKO_TAG: ${{ steps.piko.outputs.tag }}
+        run: |
+          NEEDS_BUILD=false
+
+          if [[ "$HAS_RELEASE" != "true" ]]; then
+            echo "No existing release found — triggering initial build."
+            NEEDS_BUILD=true
+          else
+            if printf '%s\n' "$BODY" | grep -qF "$PATCHES_TAG"; then
+              echo "Morphe patches tag $PATCHES_TAG already in latest release."
+            else
+              echo "Morphe patches updated: latest release does not contain $PATCHES_TAG."
+              NEEDS_BUILD=true
+            fi
+            if printf '%s\n' "$BODY" | grep -qF "$PIKO_TAG"; then
+              echo "Piko patches tag $PIKO_TAG already in latest release."
+            else
+              echo "Piko patches updated: latest release does not contain $PIKO_TAG."
+              NEEDS_BUILD=true
+            fi
+          fi
+
+          echo "needs_build=$NEEDS_BUILD" >> "$GITHUB_OUTPUT"
+        id: decide
+
+      - name: Dispatch build workflow
+        if: steps.decide.outputs.needs_build == 'true'
+        run: |
+          gh workflow run build-morphe.yml
+          echo "Dispatched build-morphe.yml"
+        env:
+          GH_TOKEN: ${{ github.token }}
