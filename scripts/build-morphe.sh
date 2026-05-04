@@ -432,4 +432,20 @@ RELEASE_NAME="Morphe Builds - $NOW"
 
 } > build/release-notes.md
 
+if [ "$YOUTUBE_OK" = true ]; then
+  {
+    echo "# YouTube Morphe"
+    echo ""
+    echo "**Patched Version:** \`${YT_VER}\`"
+    echo "**Build Date:** ${BUILD_DATE}"
+    echo ""
+    echo "## Components"
+    echo ""
+    echo "| Component | Version |"
+    echo "| :--- | :--- |"
+    echo "| Morphe Patches | \`${PATCHES_VER}\` |"
+    echo "| Morphe CLI | \`${CLI_VER}\` |"
+  } > dist/youtube-changelog.md
+fi
+
 log "Done: $RELEASE_TAG"

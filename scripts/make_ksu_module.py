@@ -409,11 +409,7 @@ def main():
                 "version": f"v{version} (patches {patch_tag})",
                 "versionCode": int(args.version_code),
                 "zipUrl": f"https://github.com/{args.repo}/releases/latest/download/YouTube-v{version}.zip",
-                "changelog": (
-                    f"YouTube v{version}\n"
-                    f"Morphe Patches: {patch_tag}\n"
-                    f"Morphe CLI: {cli_tag}"
-                ),
+                "changelog": f"https://raw.githubusercontent.com/{args.repo}/main/dist/YouTube-changelog.md",
             }, indent=2) + "\n")
             print(f"updateJson: {update_json}")
     finally:
