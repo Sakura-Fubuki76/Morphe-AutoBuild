@@ -168,7 +168,7 @@ patch_app() {
 
   log "Applying Morphe patches to ${app_id}."
   set +e
-  java -jar tools/morphe-cli.jar patch \
+  java -cp "tools/morphe-cli.jar:tools/APKEditor.jar" app.morphe.MorpheLauncherKt patch \
     $patches_args \
     "${KEYSTORE_ARGS[@]}" \
     --temporary-files-path "build/${app_id}-morphe-tmp" \
@@ -184,7 +184,7 @@ patch_app() {
   if [[ "$patch_status" -ne 0 ]]; then
     if grep -qiE 'unknown option|no such option|unrecognized.*out' "$log_file"; then
       log "CLI does not support --out; retrying ${app_id} and discovering generated APK."
-      java -jar tools/morphe-cli.jar patch \
+      java -cp "tools/morphe-cli.jar:tools/APKEditor.jar" app.morphe.MorpheLauncherKt patch \
         $patches_args \
         "${KEYSTORE_ARGS[@]}" \
         --temporary-files-path "build/${app_id}-morphe-tmp" \
