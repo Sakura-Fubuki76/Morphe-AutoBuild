@@ -445,7 +445,7 @@ if [ "$YOUTUBE_OK" = true ]; then
     echo "| :--- | :--- |"
     echo "| Morphe Patches | \`${PATCHES_VER}\` |"
     echo "| Morphe CLI | \`${CLI_VER}\` |"
-  } > dist/youtube-changelog.md
+  } > dist/YouTube-changelog.md
 fi
 
 log "Done: $RELEASE_TAG"
