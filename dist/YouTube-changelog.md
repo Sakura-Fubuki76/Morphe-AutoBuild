@@ -7,5 +7,5 @@
 
 | Component | Version |
 | :--- | :--- |
-| Morphe Patches | `v1.26.1-dev.2` |
+| Morphe Patches | `v1.26.1-dev.3` |
 | Morphe CLI | `v1.8.0` |
