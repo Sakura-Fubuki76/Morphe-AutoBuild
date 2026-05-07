@@ -323,7 +323,7 @@ fi
 
 if [ "$YOUTUBE_OK" = true ]; then
   log "Packaging KernelSU/Magisk-compatible module."
-  MODULE_VERSION_CODE="$(TZ=Asia/Shanghai date +%Y%m%d)"
+  MODULE_VERSION_CODE="$(TZ=Asia/Shanghai date +'%Y-%m-%d %H:%M')"
   python scripts/make_ksu_module.py \
     --apk "build/youtube-morphe-arm64.apk" \
     --stock-apk build/youtube-arm64-merged.apk \
@@ -379,7 +379,6 @@ done
 printf '%s\n' "${RELEASE_FILES[@]}" > build/release-files.txt
 
 NOW="$(TZ=Asia/Shanghai date +'%Y-%m-%d %H:%M')"
-BUILD_DATE="$(TZ=Asia/Shanghai date +%Y-%m-%d)"
 RELEASE_TAG="${PATCHES_VER}"
 RELEASE_NAME="Morphe Builds - $NOW"
 
@@ -437,7 +436,7 @@ if [ "$YOUTUBE_OK" = true ]; then
     echo "# YouTube Morphe"
     echo ""
     echo "**Patched Version:** \`${YT_VER}\`"
-    echo "**Build Date:** ${BUILD_DATE}"
+    echo "**Build Date:** ${NOW}"
     echo ""
     echo "## Components"
     echo ""
