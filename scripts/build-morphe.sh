@@ -323,7 +323,7 @@ fi
 
 if [ "$YOUTUBE_OK" = true ]; then
   log "Packaging KernelSU/Magisk-compatible module."
-  MODULE_VERSION_CODE="$(TZ=Asia/Shanghai date +'%Y-%m-%d %H:%M')"
+  MODULE_VERSION_CODE="$(TZ=Asia/Shanghai date +'%Y%m%d%H%M')"
   python scripts/make_ksu_module.py \
     --apk "build/youtube-morphe-arm64.apk" \
     --stock-apk build/youtube-arm64-merged.apk \
