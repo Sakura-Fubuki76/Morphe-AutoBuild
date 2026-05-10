@@ -1,11 +1,11 @@
 # YouTube Morphe
 
 **Patched Version:** `21.19.280`
-**Build Date:** 2026-05-10 15:13
+**Build Date:** 2026-05-10 19:12
 
 ## Components
 
 | Component | Version |
 | :--- | :--- |
-| Morphe Patches | `v1.27.0-dev.2` |
+| Morphe Patches | `v1.27.0-dev.3` |
 | Morphe CLI | `v1.8.1-dev.1` |
