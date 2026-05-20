@@ -134,6 +134,9 @@ def get_download_link(version, config):
     from bs4 import BeautifulSoup
     from urllib.parse import quote
 
+    # Strip piko-specific tags that don't appear in APKMirror URLs
+    version = re.sub(r'-ripped', '', version)
+
     s = _apkmirror_session()
 
     build_number = None
@@ -154,11 +157,6 @@ def get_download_link(version, config):
             clean_version = version
 
     version_parts = clean_version.split(".")
-
-    # Strip piko-specific tags (e.g. 0-release-ripped → 0-release) for
-    # additional APKMirror URL candidates.
-    _stripped_parts = [re.sub(r'-(?:ripped|patched|mod)(?=-|$)', '', p) for p in version_parts]
-    _has_stripped = _stripped_parts != version_parts
 
     found_soup = None
     correct_page = False
@@ -186,17 +184,6 @@ def get_download_link(version, config):
         if release_name != config["name"]:
             url_patterns.append(f"{APKMIRROR_BASE}/apk/{config['org']}/{encoded_app}/{encoded_app}-{current_ver_str}/")
 
-        # Also try URLs with piko tags stripped from version parts
-        if _has_stripped:
-            alt_ver_str = "-".join(_stripped_parts[:i])
-            if alt_ver_str != current_ver_str:
-                url_patterns.append(f"{APKMIRROR_BASE}/apk/{config['org']}/{encoded_app}/{encoded_rel}-{alt_ver_str}-release/")
-                if release_name != config["name"]:
-                    url_patterns.append(f"{APKMIRROR_BASE}/apk/{config['org']}/{encoded_app}/{encoded_app}-{alt_ver_str}-release/")
-                url_patterns.append(f"{APKMIRROR_BASE}/apk/{config['org']}/{encoded_app}/{encoded_rel}-{alt_ver_str}/")
-                if release_name != config["name"]:
-                    url_patterns.append(f"{APKMIRROR_BASE}/apk/{config['org']}/{encoded_app}/{encoded_app}-{alt_ver_str}/")
-
         url_patterns = list(dict.fromkeys(url_patterns))
 
         for url in url_patterns:
@@ -216,10 +203,6 @@ def get_download_link(version, config):
                     current_ver_str,
                     ".".join(version_parts[:i]),
                 ]
-                if _has_stripped:
-                    stripped_dot = ".".join(_stripped_parts[:i])
-                    version_checks.append(stripped_dot)
-                    version_checks.append(stripped_dot.replace(".", "-"))
                 if build_number:
                     if build_format == "build_suffix":
                         version_checks.append(f"{clean_version} build {build_number}")
