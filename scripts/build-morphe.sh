@@ -363,9 +363,9 @@ VERSION="$(python scripts/version_summary.py $VERSION_SUMMARY_ARGS)"
 
 
 APP_ENTRIES=(
-  "$YOUTUBE_OK|YouTube|${YT_VER}|dist/youtube.zip|dist/YouTube-v${YT_VER}.zip"
-  "$REDDIT_OK|Reddit|${RD_VER}|dist/reddit.apk|dist/Reddit-v${RD_VER}.apk"
-  "$TWITTER_OK|X / Twitter|${TW_VER}|dist/twitter.apk|dist/X-v${TW_VER}.apk"
+  "$YOUTUBE_OK|YouTube|${YT_VER:-}|dist/youtube.zip|dist/YouTube-v${YT_VER:-}.zip"
+  "$REDDIT_OK|Reddit|${RD_VER:-}|dist/reddit.apk|dist/Reddit-v${RD_VER:-}.apk"
+  "$TWITTER_OK|X / Twitter|${TW_VER:-}|dist/twitter.apk|dist/X-v${TW_VER:-}.apk"
 )
 
 RELEASE_FILES=()

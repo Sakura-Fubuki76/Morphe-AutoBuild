@@ -155,6 +155,11 @@ def get_download_link(version, config):
 
     version_parts = clean_version.split(".")
 
+    # Strip piko-specific tags (e.g. 0-release-ripped → 0-release) for
+    # additional APKMirror URL candidates.
+    _stripped_parts = [re.sub(r'-(?:ripped|patched|mod)(?=-|$)', '', p) for p in version_parts]
+    _has_stripped = _stripped_parts != version_parts
+
     found_soup = None
     correct_page = False
 
@@ -181,6 +186,17 @@ def get_download_link(version, config):
         if release_name != config["name"]:
             url_patterns.append(f"{APKMIRROR_BASE}/apk/{config['org']}/{encoded_app}/{encoded_app}-{current_ver_str}/")
 
+        # Also try URLs with piko tags stripped from version parts
+        if _has_stripped:
+            alt_ver_str = "-".join(_stripped_parts[:i])
+            if alt_ver_str != current_ver_str:
+                url_patterns.append(f"{APKMIRROR_BASE}/apk/{config['org']}/{encoded_app}/{encoded_rel}-{alt_ver_str}-release/")
+                if release_name != config["name"]:
+                    url_patterns.append(f"{APKMIRROR_BASE}/apk/{config['org']}/{encoded_app}/{encoded_app}-{alt_ver_str}-release/")
+                url_patterns.append(f"{APKMIRROR_BASE}/apk/{config['org']}/{encoded_app}/{encoded_rel}-{alt_ver_str}/")
+                if release_name != config["name"]:
+                    url_patterns.append(f"{APKMIRROR_BASE}/apk/{config['org']}/{encoded_app}/{encoded_app}-{alt_ver_str}/")
+
         url_patterns = list(dict.fromkeys(url_patterns))
 
         for url in url_patterns:
@@ -200,6 +216,10 @@ def get_download_link(version, config):
                     current_ver_str,
                     ".".join(version_parts[:i]),
                 ]
+                if _has_stripped:
+                    stripped_dot = ".".join(_stripped_parts[:i])
+                    version_checks.append(stripped_dot)
+                    version_checks.append(stripped_dot.replace(".", "-"))
                 if build_number:
                     if build_format == "build_suffix":
                         version_checks.append(f"{clean_version} build {build_number}")
@@ -324,6 +344,20 @@ def fetch_from_apkpure(session, package, target_version=None):
                         file_type = "XAPK" if xapk_flag == "XAPKJ" else "APK"
                         logging.info(f"APKPure matched target version {ver}")
                         return dl_url, ver, file_type
+
+        # Try fallback: strip non-numeric suffixes (e.g. 11.91.0-release-ripped.0 → 11.91.0)
+        base_match = VERSION_RE.search(target_version)
+        if base_match:
+            base_ver = base_match.group(1)
+            if base_ver != target_version:
+                logging.info(f"Exact version {target_version} not found, trying base version {base_ver}")
+                for vpos, ver in versions:
+                    if ver == base_ver:
+                        for upos, xapk_flag, dl_url in all_urls:
+                            if upos > vpos:
+                                file_type = "XAPK" if xapk_flag == "XAPKJ" else "APK"
+                                logging.warning(f"Using base version {base_ver} as fallback for {target_version}")
+                                return dl_url, base_ver, file_type
 
         available = ", ".join(sorted(set(v for _, v in versions), reverse=True)[:10])
         raise RuntimeError(
