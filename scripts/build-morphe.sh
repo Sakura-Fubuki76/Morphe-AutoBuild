@@ -172,7 +172,6 @@ patch_app() {
     $patches_args \
     "${KEYSTORE_ARGS[@]}" \
     --temporary-files-path "build/${app_id}-morphe-tmp" \
-    --purge \
     --force \
     --continue-on-error \
     --out "$output" \
@@ -188,7 +187,6 @@ patch_app() {
         $patches_args \
         "${KEYSTORE_ARGS[@]}" \
         --temporary-files-path "build/${app_id}-morphe-tmp" \
-        --purge \
         --force \
         --continue-on-error \
         "${extra_args[@]}" \
