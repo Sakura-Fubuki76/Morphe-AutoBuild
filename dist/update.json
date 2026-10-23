@@ -1,6 +1,6 @@
 {
-  "version": "v21.42.241 (patches v1.48.0-dev.19)",
-  "versionCode": 202610221732,
+  "version": "v21.42.241 (patches v1.48.0)",
+  "versionCode": 202610230836,
   "zipUrl": "https://github.com/Sakura-Fubuki76/Morphe-AutoBuild/releases/latest/download/YouTube-v21.42.241.zip",
   "changelog": "https://raw.githubusercontent.com/Sakura-Fubuki76/Morphe-AutoBuild/main/dist/YouTube-changelog.md"
 }
