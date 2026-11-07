@@ -60,13 +60,13 @@ jobs:
             echo "No existing release found — triggering initial build."
             NEEDS_BUILD=true
           else
-            if printf '%s\n' "$BODY" | grep -qF "$PATCHES_TAG"; then
+            if printf '%s\n' "$BODY" | grep -qxF -- "- tag: \`$PATCHES_TAG\`"; then
               echo "Morphe patches tag $PATCHES_TAG already in latest release."
             else
               echo "Morphe patches updated: latest release does not contain $PATCHES_TAG."
               NEEDS_BUILD=true
             fi
-            if printf '%s\n' "$BODY" | grep -qF "$PIKO_TAG"; then
+            if printf '%s\n' "$BODY" | grep -qxF -- "- tag: \`$PIKO_TAG\`"; then
               echo "Piko patches tag $PIKO_TAG already in latest release."
             else
               echo "Piko patches updated: latest release does not contain $PIKO_TAG."
