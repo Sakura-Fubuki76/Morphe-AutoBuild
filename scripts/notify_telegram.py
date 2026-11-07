@@ -77,6 +77,10 @@ def build_message(parsed, release_tag, release_url):
                 lines.append(f"  \u274C <b>{app_label}</b> \u2014 \u6784\u5EFA\u5931\u8D25")
             else:
                 lines.append(f"  \u2705 <b>{app_label}</b>: {line}")
+            for extra in details[1:]:
+                extra_line = clean_detail(extra)
+                if extra_line:
+                    lines.append(f"     {extra_line}")
         lines.append("")
 
     sources = parsed.get("Patch Sources", {})

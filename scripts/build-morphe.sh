@@ -174,6 +174,7 @@ patch_app() {
     --temporary-files-path "build/${app_id}-morphe-tmp" \
     --force \
     --continue-on-error \
+    --result-file "build/${app_id}-result.json" \
     --out "$output" \
     "${extra_args[@]}" \
     "$input" | tee "$log_file"
@@ -203,6 +204,13 @@ patch_app() {
   test -s "$output"
 }
 
+# Patch customisations per app.  The names are validated against the current
+# bundles before building: the CLI silently ignores unknown -d/-e names, so a
+# renamed upstream patch would otherwise be a no-op instead of an error.
+YOUTUBE_PATCH_ARGS=(-d "Change header" -d "Custom branding" -d "GmsCore support")
+REDDIT_PATCH_ARGS=()
+TWITTER_PATCH_ARGS=(-d "Change app icon")
+
 log "Resolving latest Morphe CLI release, including prereleases when newer."
 if ! download_github_asset "MorpheApp/morphe-cli" "latest-any" '.*\.jar$' tools/morphe-cli.jar build/morphe-cli.json; then
   log "No Morphe CLI jar asset found; building latest release tag from source."
@@ -212,9 +220,6 @@ if ! download_github_asset "MorpheApp/morphe-cli" "latest-any" '.*\.jar$' tools/
   (cd build/morphe-cli-src && ./gradlew --no-daemon cleanShadowJar shadowJar)
   cp build/morphe-cli-src/build/libs/*-all.jar tools/morphe-cli.jar
 fi
-
-log "Compiling FindExperimentalVersions helper to access experimental patch targets."
-javac -cp tools/morphe-cli.jar scripts/FindExperimentalVersions.java -d build
 
 log "Resolving latest Morphe patches release."
 if ! download_github_asset "MorpheApp/morphe-patches" "latest-any" '.*\.mpp$' tools/patches.mpp build/morphe-patches.json; then
@@ -238,6 +243,14 @@ fi
 
 log "Downloading APKEditor for split APK/APKM merging."
 download_github_asset "REAndroid/APKEditor" "latest-stable" 'APKEditor.*\.jar$' tools/APKEditor.jar build/apkeditor.json
+
+log "Validating configured patch selections against the resolved bundles."
+python scripts/check_patch_selection.py --patches-mpp tools/patches.mpp \
+  --package "$PACKAGE_NAME" "${YOUTUBE_PATCH_ARGS[@]}"
+python scripts/check_patch_selection.py --patches-mpp tools/patches.mpp \
+  --package "${REDDIT_PACKAGE_NAME:-com.reddit.frontpage}" "${REDDIT_PATCH_ARGS[@]}"
+python scripts/check_patch_selection.py --patches-mpp tools/piko-patches.mpp \
+  --package "${TWITTER_PACKAGE_NAME:-com.twitter.android}" "${TWITTER_PATCH_ARGS[@]}"
 
 if [[ -n "${SIGNING_KEY:-}" ]]; then
   log "Using signing key from GitHub Secrets."
@@ -285,15 +298,19 @@ else
 fi
 
 YOUTUBE_OK=false
-YOUTUBE_TARGET="$(find_target_version "$PACKAGE_NAME")" || true
-if download_app_package "youtube" "$PACKAGE_NAME" "${YOUTUBE_URL:-}" "${APKCOMBO_YOUTUBE_APP:-youtube}" "${APKCOMBO_YOUTUBE_BETA:-true}" downloads/youtube-play build/youtube.json "$YOUTUBE_TARGET" && \
+YOUTUBE_TARGET="$(find_target_version "$PACKAGE_NAME" || true)"
+if [[ -z "$YOUTUBE_TARGET" ]]; then
+  log "ERROR: No compatible YouTube version in the patch bundle; skipping YouTube build."
+elif download_app_package "youtube" "$PACKAGE_NAME" "${YOUTUBE_URL:-}" "${APKCOMBO_YOUTUBE_APP:-youtube}" "${APKCOMBO_YOUTUBE_BETA:-true}" downloads/youtube-play build/youtube.json "$YOUTUBE_TARGET" && \
    merge_arm64_package "youtube" downloads/youtube-play build/youtube-arm64-merged.apk; then
   log "Stripping native libraries from YouTube APK before patching (preserves V2/V3 signing)."
   cp build/youtube-arm64-merged.apk build/youtube-arm64-nolibs.apk
   zip -d build/youtube-arm64-nolibs.apk "lib/*" >/dev/null 2>&1 || true
   if patch_app "youtube" build/youtube-arm64-nolibs.apk "build/youtube-morphe-arm64.apk" "" "" \
-       -d "Change header" -d "Custom branding" -d "GmsCore support" \
-       -e "Change package name" -OpackageName=com.google.android.youtube; then
+       "${YOUTUBE_PATCH_ARGS[@]}" && \
+     python scripts/patch_result.py --result build/youtube-result.json \
+       --expected-version "$YOUTUBE_TARGET" --app YouTube \
+       --status-out build/youtube-patch-status.md; then
     YOUTUBE_OK=true
   fi
 fi
@@ -301,9 +318,14 @@ fi
 
 REDDIT_OK=false
 REDDIT_TARGET="$(find_target_version "${REDDIT_PACKAGE_NAME:-com.reddit.frontpage}" || true)"
-if download_app_package "reddit" "${REDDIT_PACKAGE_NAME:-com.reddit.frontpage}" "${REDDIT_URL:-}" "${APKCOMBO_REDDIT_APP:-reddit}" "${APKCOMBO_REDDIT_BETA:-false}" downloads/reddit-play build/reddit.json "$REDDIT_TARGET" && \
+if [[ -z "$REDDIT_TARGET" ]]; then
+  log "ERROR: No compatible Reddit version in the patch bundle; skipping Reddit build."
+elif download_app_package "reddit" "${REDDIT_PACKAGE_NAME:-com.reddit.frontpage}" "${REDDIT_URL:-}" "${APKCOMBO_REDDIT_APP:-reddit}" "${APKCOMBO_REDDIT_BETA:-false}" downloads/reddit-play build/reddit.json "$REDDIT_TARGET" && \
    merge_arm64_package "reddit" downloads/reddit-play build/reddit-arm64-merged.apk && \
-   patch_app "reddit" build/reddit-arm64-merged.apk "dist/reddit.apk"; then
+   patch_app "reddit" build/reddit-arm64-merged.apk "dist/reddit.apk" "" "" "${REDDIT_PATCH_ARGS[@]}" && \
+   python scripts/patch_result.py --result build/reddit-result.json \
+     --expected-version "$REDDIT_TARGET" --app Reddit \
+     --status-out build/reddit-patch-status.md; then
   REDDIT_OK=true
 else
   log "WARNING: Reddit build failed, excluding from release"
@@ -311,9 +333,14 @@ fi
 
 TWITTER_OK=false
 TWITTER_TARGET="$(find_target_version "${TWITTER_PACKAGE_NAME:-com.twitter.android}" tools/piko-patches.mpp "--no-beta" || true)"
-if download_app_package "twitter" "${TWITTER_PACKAGE_NAME:-com.twitter.android}" "${TWITTER_URL:-}" "${APKCOMBO_TWITTER_APP:-twitter}" "${APKCOMBO_TWITTER_BETA:-true}" downloads/twitter-play build/twitter.json "$TWITTER_TARGET" && \
+if [[ -z "$TWITTER_TARGET" ]]; then
+  log "ERROR: No compatible X version in the piko bundle; skipping X build."
+elif download_app_package "twitter" "${TWITTER_PACKAGE_NAME:-com.twitter.android}" "${TWITTER_URL:-}" "${APKCOMBO_TWITTER_APP:-twitter}" "${APKCOMBO_TWITTER_BETA:-true}" downloads/twitter-play build/twitter.json "$TWITTER_TARGET" && \
    merge_arm64_package "twitter" downloads/twitter-play build/twitter-arm64-merged.apk && \
-   patch_app "twitter" build/twitter-arm64-merged.apk "dist/twitter.apk" "tools/piko-patches.mpp" "no-morphe" -d "Change app icon"; then
+   patch_app "twitter" build/twitter-arm64-merged.apk "dist/twitter.apk" "tools/piko-patches.mpp" "no-morphe" "${TWITTER_PATCH_ARGS[@]}" && \
+   python scripts/patch_result.py --result build/twitter-result.json \
+     --expected-version "$TWITTER_TARGET" --app X \
+     --status-out build/twitter-patch-status.md; then
   TWITTER_OK=true
 else
   log "WARNING: X build failed, excluding from release"
@@ -395,6 +422,9 @@ RELEASE_NAME="Morphe Builds - $NOW"
   echo "### YouTube"
   if [ "$YOUTUBE_OK" = true ]; then
     echo "- universal: \`${YT_VER}\`"
+    if [ -f build/youtube-patch-status.md ]; then
+      cat build/youtube-patch-status.md
+    fi
   else
     echo "- *build failed*"
   fi
@@ -403,6 +433,9 @@ RELEASE_NAME="Morphe Builds - $NOW"
   echo "### Reddit"
   if [ "$REDDIT_OK" = true ]; then
     echo "- arm64-v8a: \`${RD_VER}\`"
+    if [ -f build/reddit-patch-status.md ]; then
+      cat build/reddit-patch-status.md
+    fi
   else
     echo "- *build failed*"
   fi
@@ -411,6 +444,9 @@ RELEASE_NAME="Morphe Builds - $NOW"
   echo "### X"
   if [ "$TWITTER_OK" = true ]; then
     echo "- arm64-v8a: \`${TW_VER}\`"
+    if [ -f build/twitter-patch-status.md ]; then
+      cat build/twitter-patch-status.md
+    fi
   else
     echo "- *build failed*"
   fi

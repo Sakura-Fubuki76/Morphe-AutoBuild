@@ -80,6 +80,13 @@ jobs:
             build/*.log
           if-no-files-found: ignore
 
+      - name: Clean stale release assets
+        run: |
+          python scripts/cleanup_release_assets.py \
+            --repo "$GITHUB_REPOSITORY" \
+            --tag "$RELEASE_TAG" \
+            --keep-file build/release-files.txt
+
       - name: Publish release
         uses: softprops/action-gh-release@v3
         with:

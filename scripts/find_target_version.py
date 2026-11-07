@@ -1,6 +1,19 @@
 #!/usr/bin/env python3
+"""Resolve the newest app version supported by a Morphe patch bundle.
+
+Uses the CLI's ``list-versions`` command instead of loading the patch bundle
+through the patcher API.  Older versions of this script compiled a Java helper
+against ``app.morphe.patcher`` internals, which broke whenever the Morphe CLI
+changed its Java API (for example CLI 2.1.0-dev.4 removed the ``Patch<T>``
+type parameter and changed ``loadPatchesFromJar``'s return type).  Relying on
+the CLI command keeps this script stable across CLI releases.
+
+Selection rule: among the versions reported by ``list-versions``, prefer the
+ones supported by the most (default-enabled) patches, then take the newest of
+those.  This avoids picking a freshly-published version that only one patch
+knows about, which would make most patches fail after ``--force``.
+"""
 import argparse
-import os
 import re
 import subprocess
 import sys
@@ -11,122 +24,143 @@ CLI_JAR = ROOT / "tools" / "morphe-cli.jar"
 PATCHES_MPP = ROOT / "tools" / "patches.mpp"
 BUILD_DIR = ROOT / "build"
 
-_VERSION_COUNT_LINE = re.compile(r"^\s*(\S+)\s+\(\d+\s+patch(?:es)?\)")
+# Example lines produced by `list-versions` (Morphe CLI 2.x):
+#   INFO: Package name: com.google.android.youtube
+#   Most common compatible versions:
+#           21.44.528 (112 patches)
+#           21.44.528 [versionCodes: ARM64_V8A=...] (112 patches)
+_PACKAGE_LINE = re.compile(r"Package name:\s*(?P<pkg>\S+)")
+_VERSION_LINE = re.compile(
+    r"^\s*(?P<version>\S+)(?:\s+\[versionCodes:[^\]]*\])?\s+"
+    r"\((?P<count>\d+)\s+patch(?:es)?\)\s*$"
+)
 
 
-def parse_list_versions(output, package):
-    """Parse ``list-versions`` output — stable only."""
-    versions = []
+def _run_list_versions(cli_jar, patches_mpp, package, include_experimental):
+    cmd = [
+        "java",
+        "-jar",
+        str(cli_jar),
+        "list-versions",
+        "--patches",
+        str(patches_mpp),
+        "-f",
+        package,
+    ]
+    if include_experimental:
+        cmd.append("-x")
+    return subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=180,
+        cwd=str(ROOT),
+    )
+
+
+def parse_versions(output, package):
+    """Return ``[(version, patch_count)]`` for *package* from the CLI output."""
+    entries = []
     in_section = False
     for line in output.splitlines():
-        if line.startswith("Package name: ") and package in line:
-            in_section = True
+        package_match = _PACKAGE_LINE.search(line)
+        if package_match:
+            in_section = package_match.group("pkg") == package
             continue
-        if line.startswith("Package name: "):
-            in_section = False
+        if not in_section:
             continue
-        if in_section:
-            m = _VERSION_COUNT_LINE.match(line)
-            if m:
-                versions.append(m.group(1))
-    return versions
+        version_match = _VERSION_LINE.match(line)
+        if version_match:
+            entries.append(
+                (version_match.group("version"), int(version_match.group("count")))
+            )
+    return entries
 
 
-def version_key(v):
-    """Split version into numeric parts for natural sorting."""
-    parts = re.split(r"[-._]", v)
+def version_key(version):
+    """Natural sort key for app versions such as ``12.19.1-release.0``."""
     key = []
-    for p in parts:
+    for part in re.split(r"[-._]", version):
         try:
-            key.append((0, int(p)))
+            key.append((0, int(part)))
         except ValueError:
-            key.append((1, p))
+            key.append((1, part))
     return key
 
 
-def get_target_experimental(cli_jar, patches_mpp, package, no_beta=False):
-    """Use FindExperimentalVersions to access raw ``patch.compatibility``,
-    which includes experimental targets that the legacy
-    ``compatiblePackages`` getter strips out."""
-    sep = os.pathsep
-    classpath = sep.join([str(cli_jar), str(BUILD_DIR)])
-    helper_class = str(BUILD_DIR / "FindExperimentalVersions.class")
-    if not os.path.exists(helper_class):
-        raise RuntimeError(
-            f"FindExperimentalVersions.class not found at {helper_class}. "
-            "Compile it first: javac -cp tools/morphe-cli.jar "
-            "scripts/FindExperimentalVersions.java -d build"
-        )
-
-    cmd = [
-        "java", "-cp", classpath,
-        "FindExperimentalVersions",
-        str(patches_mpp), package,
-    ]
-
-    result = subprocess.run(
-        cmd, capture_output=True, text=True, timeout=120, cwd=str(ROOT),
-    )
-    if result.returncode != 0:
-        raise RuntimeError(f"Java helper failed:\n{result.stderr}")
-
-    versions = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+def choose_target(entries, no_beta):
+    candidates = entries
     if no_beta:
-        versions = [v for v in versions if "beta" not in v.lower()]
-    if not versions:
+        candidates = [e for e in candidates if "beta" not in e[0].lower()]
+    if not candidates:
+        return None
+    best_count = max(count for _, count in candidates)
+    best = [version for version, count in candidates if count == best_count]
+    return max(best, key=version_key)
+
+
+def resolve_target(cli_jar, patches_mpp, package, include_experimental, no_beta):
+    proc = _run_list_versions(cli_jar, patches_mpp, package, include_experimental)
+    if proc.returncode != 0 and include_experimental:
+        # Older CLI releases may not know about -x; retry without experimental
+        # versions rather than failing the whole build.
+        lowered = (proc.stderr + proc.stdout).lower()
+        if "unknown option" in lowered or "unmatched argument" in lowered:
+            proc = _run_list_versions(cli_jar, patches_mpp, package, False)
+    if proc.returncode != 0:
+        detail = (proc.stderr or proc.stdout).strip().splitlines()
         raise RuntimeError(
-            f"No experimental compatible versions found for {package}"
+            "list-versions failed for "
+            f"{package}: {detail[-1] if detail else 'no output'}"
         )
 
-    return versions[-1]
-
-
-def get_target_stable(cli_jar, patches_mpp, package):
-    cmd = [
-        "java", "-jar", str(cli_jar),
-        "list-versions", str(patches_mpp),
-        "--filter-package-names", package,
-    ]
-
-    result = subprocess.run(
-        cmd, capture_output=True, text=True, timeout=120, cwd=str(ROOT),
-    )
-    if result.returncode != 0:
-        raise RuntimeError(f"CLI command failed:\n{result.stderr}")
-
-    versions = parse_list_versions(result.stdout, package)
-    if not versions:
+    entries = parse_versions(proc.stdout, package)
+    target = choose_target(entries, no_beta)
+    if target is None:
         raise RuntimeError(
-            f"No stable compatible versions found for {package}"
+            f"No compatible versions found for {package} in {patches_mpp}"
         )
-
-    versions.sort(key=version_key, reverse=True)
-    return versions[0]
+    return target, entries
 
 
 def main():
-    p = argparse.ArgumentParser()
-    p.add_argument("--package", required=True, help="Android package name")
-    p.add_argument("--cli-jar", default=str(CLI_JAR))
-    p.add_argument("--patches-mpp", default=str(PATCHES_MPP))
-    p.add_argument("--experimental", action="store_true",
-                   help="Include experimental versions in search")
-    p.add_argument("--no-beta", action="store_true",
-                   help="Exclude beta versions from results")
-    args = p.parse_args()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--package", required=True, help="Android package name")
+    parser.add_argument("--cli-jar", default=str(CLI_JAR))
+    parser.add_argument("--patches-mpp", default=str(PATCHES_MPP))
+    parser.add_argument(
+        "--experimental",
+        action="store_true",
+        help="Include experimental versions in search",
+    )
+    parser.add_argument(
+        "--no-beta",
+        action="store_true",
+        help="Exclude beta versions from results",
+    )
+    parser.add_argument("-v", "--verbose", action="store_true")
+    args = parser.parse_args()
 
-    if args.experimental:
-        target = get_target_experimental(
-            args.cli_jar, args.patches_mpp, args.package,
-            no_beta=args.no_beta,
+    try:
+        target, entries = resolve_target(
+            args.cli_jar,
+            args.patches_mpp,
+            args.package,
+            args.experimental,
+            args.no_beta,
         )
-    else:
-        target = get_target_stable(
-            args.cli_jar, args.patches_mpp, args.package,
-        )
+    except Exception as exc:  # noqa: BLE001 - the build script logs the message
+        print(str(exc), file=sys.stderr)
+        return 1
 
+    if args.verbose:
+        listing = ", ".join(f"{version}({count})" for version, count in entries)
+        print(f"[target] {args.package}: {listing}", file=sys.stderr)
     print(target)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
