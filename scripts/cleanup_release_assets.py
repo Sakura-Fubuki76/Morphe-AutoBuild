@@ -55,7 +55,7 @@ def main():
     )
     args = parser.parse_args()
 
-    patterns = args.pattern or DEFAULT_PATTERNS
+    patterns = args.pattern
     keep = set()
     keep_path = args.keep_file
     try:
@@ -71,6 +71,24 @@ def main():
     # release-files.txt holds paths under dist/; the release asset names are
     # only the basenames.
     keep = {os.path.basename(name) for name in keep}
+
+    if not keep:
+        print(
+            "[cleanup] WARNING: no artifacts in this build; "
+            "skipping cleanup to keep the previous release assets",
+            file=sys.stderr,
+        )
+        return 0
+
+    if not patterns:
+        # Only clean the artifact families that this build actually produced:
+        # when an app fails, its old assets stay on the release instead of
+        # disappearing until a later successful build replaces them.
+        families = sorted(
+            {name.split("-", 1)[0] for name in keep if "-" in name}
+        )
+        patterns = [f"{family}-*" for family in families]
+        print(f"[cleanup] artifact patterns from this build: {', '.join(patterns)}")
 
     response = gh(f"repos/{args.repo}/releases/tags/{args.tag}")
     if response.returncode != 0:
