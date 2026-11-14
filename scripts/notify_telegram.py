@@ -3,6 +3,9 @@ import requests
 
 bot_token = os.environ["BOT_TOKEN"]
 chat_id = os.environ["CHAT_ID"]
+# Forum topic id (thread id). Empty = the group's default "General" topic.
+# Get it from a topic link like https://t.me/c/1234567890/42 -> 42.
+thread_id = os.environ.get("THREAD_ID", "").strip()
 release_tag = os.environ["RELEASE_TAG"]
 repo = os.environ["REPO"]
 
@@ -102,13 +105,21 @@ def build_message(parsed, release_tag, release_url):
 parsed = parse_release_notes(notes)
 text = build_message(parsed, release_tag, release_url)
 
+payload = {
+    "chat_id": chat_id,
+    "text": text,
+    "parse_mode": "HTML",
+    "disable_web_page_preview": False,
+}
+
+if thread_id:
+    if thread_id.isdigit():
+        payload["message_thread_id"] = int(thread_id)
+    else:
+        print(f"WARNING: THREAD_ID={thread_id!r} is not numeric, ignoring")
+
 resp = requests.post(
     f"https://api.telegram.org/bot{bot_token}/sendMessage",
-    json={
-        "chat_id": chat_id,
-        "text": text,
-        "parse_mode": "HTML",
-        "disable_web_page_preview": False,
-    },
+    json=payload,
 )
 print(resp.status_code, resp.text)
